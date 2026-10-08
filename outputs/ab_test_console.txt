@@ -1,0 +1,14 @@
+Players analysed: 90,188 (raw 90,189)  control 44,699 / treatment 45,489
+SRM chi2=6.92 p=0.0085  flag=False
+MDE retention_1: 0.93 pp abs (2.1% rel) on base 44.82%
+MDE retention_7: 0.73 pp abs (3.8% rel) on base 19.02%
+n/arm for 2% rel D7 drop: 165,819
+retention_7: 19.02% -> 18.20%  diff -0.82pp CI [-1.33, -0.31]  rel -4.30%  p=0.0016 holm=0.0048
+retention_1: 44.82% -> 44.23%  diff -0.59pp CI [-1.24, 0.06]  rel -1.32%  p=0.0739 holm=0.1018
+rounds mean 51.3 vs 51.3, median 17.0 vs 16.0  MW p=0.0509 holm=0.1018
+bootstrap retention_1: rel lift CI [-2.78%, 0.13%]  P(gate30 better)=0.966
+bootstrap retention_7: rel lift CI [-6.89%, -1.63%]  P(gate30 better)=0.999
+A/A false-positive rate: 0.051
+D7 players lost per 100k installs with gate_40: 818
+Overall: {'d1': np.float64(0.4452), 'd7': np.float64(0.1861), 'median_rounds': 16.0, 'share_under_30': 0.6311, 'share_zero': 0.0443, 'd1_not_d7': 0.2991}
+Decision: Keep gate at level 30

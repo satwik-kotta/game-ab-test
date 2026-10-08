@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gate Placement A/B Test</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<style>
+:root{color-scheme:light;--bg:#f4f3ef;--surface:#fcfcfb;--line:#e4e2dc;--text:#0b0b0b;--text2:#52514e;--muted:#8a8984;
+--s1:#2a78d6;--s2:#eb6834;--good:#008300;--bad:#c4302b;--grid:#ecebe6;--grid2:#c9c7c0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#111110;--surface:#1a1a19;--line:#2c2c2a;--text:#fff;--text2:#c3c2b7;--muted:#8f8e86;--s1:#3987e5;--s2:#d95926;--good:#3aa63a;--bad:#e66767;--grid:#2a2a28;--grid2:#4a4a46}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#111110;--surface:#1a1a19;--line:#2c2c2a;--text:#fff;--text2:#c3c2b7;--muted:#8f8e86;--s1:#3987e5;--s2:#d95926;--good:#3aa63a;--bad:#e66767;--grid:#2a2a28;--grid2:#4a4a46}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px 16px 48px}
+.wrap{max-width:1120px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end;margin-bottom:18px}
+h1{font-size:22px;letter-spacing:-.01em}
+.sub{color:var(--text2);max-width:720px}
+.controls{display:flex;gap:6px;align-items:center;color:var(--text2);font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;color:var(--text2);padding:6px 12px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--text);color:var(--surface)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.k-label{color:var(--text2);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.k-val{font-size:26px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.k-note{color:var(--muted);font-size:12px}
+.decision{border-left:4px solid var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:12px}
+.card h2{font-size:14px;font-weight:650;margin-bottom:2px}
+.card p.cap{color:var(--text2);font-size:12.5px;margin-bottom:6px}
+.chart{height:280px;width:100%}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--text2);margin:2px 0 4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--text2);font-weight:600;font-size:12px}
+td.num,th.num{text-align:right}
+.pass{color:var(--good);font-weight:600}.warn{color:var(--bad);font-weight:600}
+footer{color:var(--muted);font-size:12px;margin-top:16px}
+.wide{grid-column:1/-1}
+@media (max-width:420px){.chart{height:240px}.k-val{font-size:22px}}
+</style></head><body><div class="wrap">
+<header>
+ <div><h1>Cookie Cats: where should the first gate go?</h1>
+ <div class="sub">Randomized A/B test on <b id="nplayers"></b> new players. Control keeps the first progress gate at level 30; treatment moves it to level 40. Primary metric: Day-7 retention.</div></div>
+ <div class="controls">Metric <div class="seg" role="group" aria-label="Metric">
+  <button data-m="retention_7" aria-pressed="true">Day-7 retention</button><button data-m="retention_1" aria-pressed="false">Day-1 retention</button></div></div>
+</header>
+
+<section class="kpis">
+ <div class="card"><div class="k-label">Gate 30 (control)</div><div class="k-val" id="kc"></div><div class="k-note" id="kcn"></div></div>
+ <div class="card"><div class="k-label">Gate 40 (treatment)</div><div class="k-val" id="kt"></div><div class="k-note" id="ktn"></div></div>
+ <div class="card"><div class="k-label">Relative lift</div><div class="k-val" id="kl"></div><div class="k-note" id="kln"></div></div>
+ <div class="card decision"><div class="k-label">Launch decision</div><div class="k-val" style="font-size:19px" id="kd"></div><div class="k-note" id="kdn"></div></div>
+</section>
+
+<section class="grid">
+ <div class="card"><h2>Retention by variant</h2><p class="cap">Whiskers show the 95% confidence interval for each arm.</p>
+  <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Gate 30</span><span><i class="sw" style="background:var(--s2)"></i>Gate 40</span></div>
+  <div class="chart" id="c1"></div></div>
+ <div class="card"><h2>Bootstrap: relative lift of gate 40</h2><p class="cap" id="bcap"></p><div class="chart" id="c2"></div></div>
+ <div class="card"><h2>Most players never reach the first gate</h2><p class="cap">Share of players by game rounds played in their first 14 days. 63% stop before round 30.</p><div class="chart" id="c3"></div></div>
+ <div class="card"><h2>Retention by engagement, per variant</h2><p class="cap">Descriptive only: rounds played is itself affected by the gate.</p>
+  <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Gate 30</span><span><i class="sw" style="background:var(--s2)"></i>Gate 40</span></div>
+  <div class="chart" id="c4"></div></div>
+ <div class="card wide"><h2>Experiment checks and results</h2><p class="cap">Holm correction across the three metrics. Decision rule fixed before readout: keep gate 30 if D7 is significantly worse.</p>
+  <div style="overflow-x:auto"><table id="tbl"></table></div></div>
+</section>
+<footer>Data: public Cookie Cats mobile-game experiment (Tactile Entertainment, via DataCamp/Kaggle). One player with 49,854 rounds removed as an outlier. Analysis: PostgreSQL + Python (SciPy, statsmodels).</footer>
+</div>
+<script>
+const R = {
+  "n_raw": 90189,
+  "n": 90188,
+  "n_control": 44699,
+  "n_treatment": 45489,
+  "srm": {
+    "chi2": 6.919989355568369,
+    "p": 0.008523748341090839,
+    "alarm_threshold": 0.001,
+    "flag": false
+  },
+  "power": {
+    "retention_1": {
+      "baseline": 0.4481979462627799,
+      "mde_abs": 0.009269463416516188,
+      "mde_rel": 0.02068162849430254
+    },
+    "retention_7": {
+      "baseline": 0.19018322557551623,
+      "mde_abs": 0.007268072563983735,
+      "mde_rel": 0.03821615992677438
+    },
+    "n_per_arm_for_2pct_rel_d7": 165819.32422301307
+  },
+  "tests": {
+    "retention_7": {
+      "control": 0.19018322557551623,
+      "treatment": 0.18200004396667327,
+      "diff": -0.00818318160884296,
+      "ci": [
+        -0.013263463260905021,
+        -0.0031028999567808985
+      ],
+      "rel_lift": -0.04302788315888383,
+      "z": -3.1574100858819936,
+      "p": 0.0015917731773993442,
+      "p_holm": 0.004775319532198032
+    },
+    "retention_1": {
+      "control": 0.4481979462627799,
+      "treatment": 0.44228274967574577,
+      "diff": -0.005915196587034155,
+      "ci": [
+        -0.01240262898665639,
+        0.0005722358125880792
+      ],
+      "rel_lift": -0.013197732466998088,
+      "z": -1.787103509763628,
+      "p": 0.0739207603418346,
+      "p_holm": 0.10178310558290753
+    },
+    "sum_gamerounds": {
+      "control_mean": 51.342110561757536,
+      "treatment_mean": 51.29877552814966,
+      "control_median": 17.0,
+      "treatment_median": 16.0,
+      "p": 0.05089155279145376,
+      "p_holm": 0.10178310558290753
+    }
+  },
+  "bootstrap": {
+    "retention_1": {
+      "ci": [
+        -0.027780624243025513,
+        0.0013384238684010369
+      ],
+      "p_gate30_better": 0.9656,
+      "hist_counts": [
+        2,
+        1,
+        8,
+        10,
+        26,
+        28,
+        52,
+        74,
+        114,
+        161,
+        180,
+        253,
+        324,
+        378,
+        493,
+        554,
+        605,
+        683,
+        651,
+        727,
+        658,
+        691,
+        612,
+        537,
+        513,
+        426,
+        352,
+        265,
+        192,
+        141,
+        92,
+        60,
+        39,
+        43,
+        22,
+        20,
+        8,
+        2,
+        1,
+        2
+      ],
+      "hist_edges": [
+        -0.03903828967506451,
+        -0.03771643857583113,
+        -0.03639458747659775,
+        -0.03507273637736437,
+        -0.03375088527813099,
+        -0.032429034178897614,
+        -0.031107183079664237,
+        -0.02978533198043086,
+        -0.02846348088119748,
+        -0.027141629781964098,
+        -0.02581977868273072,
+        -0.024497927583497343,
+        -0.023176076484263966,
+        -0.021854225385030585,
+        -0.020532374285797208,
+        -0.019210523186563827,
+        -0.01788867208733045,
+        -0.016566820988097072,
+        -0.015244969888863692,
+        -0.013923118789630314,
+        -0.012601267690396933,
+        -0.011279416591163556,
+        -0.009957565491930179,
+        -0.008635714392696798,
+        -0.007313863293463424,
+        -0.00599201219423004,
+        -0.004670161094996662,
+        -0.003348309995763285,
+        -0.0020264588965299077,
+        -0.0007046077972965303,
+        0.000617243301936854,
+        0.0019390944011702313,
+        0.0032609455004036086,
+        0.004582796599636986,
+        0.005904647698870363,
+        0.007226498798103748,
+        0.008548349897337125,
+        0.009870200996570502,
+        0.01119205209580388,
+        0.012513903195037257,
+        0.013835754294270641
+      ]
+    },
+    "retention_7": {
+      "ci": [
+        -0.0688874824513476,
+        -0.016323509622650074
+      ],
+      "p_gate30_better": 0.9991,
+      "hist_counts": [
+        4,
+        4,
+        6,
+        7,
+        17,
+        26,
+        51,
+        62,
+        105,
+        155,
+        196,
+        287,
+        374,
+        448,
+        532,
+        613,
+        680,
+        785,
+        813,
+        801,
+        732,
+        693,
+        562,
+        530,
+        387,
+        331,
+        227,
+        187,
+        130,
+        98,
+        65,
+        37,
+        25,
+        14,
+        6,
+        5,
+        2,
+        2,
+        0,
+        1
+      ],
+      "hist_edges": [
+        -0.09157699648953765,
+        -0.08899268819245645,
+        -0.08640837989537527,
+        -0.08382407159829407,
+        -0.08123976330121288,
+        -0.07865545500413168,
+        -0.07607114670705048,
+        -0.0734868384099693,
+        -0.07090253011288809,
+        -0.0683182218158069,
+        -0.0657339135187257,
+        -0.0631496052216445,
+        -0.06056529692456332,
+        -0.057980988627482126,
+        -0.055396680330400926,
+        -0.05281237203331973,
+        -0.05022806373623854,
+        -0.047643755439157345,
+        -0.04505944714207615,
+        -0.04247513884499495,
+        -0.03989083054791376,
+        -0.037306522250832565,
+        -0.03472221395375137,
+        -0.03213790565667018,
+        -0.029553597359588984,
+        -0.026969289062507784,
+        -0.024384980765426598,
+        -0.021800672468345397,
+        -0.019216364171264197,
+        -0.01663205587418301,
+        -0.01404774757710181,
+        -0.011463439280020624,
+        -0.008879130982939423,
+        -0.006294822685858223,
+        -0.0037105143887770364,
+        -0.001126206091695836,
+        0.0014581022053853504,
+        0.004042410502466551,
+        0.006626718799547751,
+        0.009211027096628938,
+        0.011795335393710138
+      ]
+    }
+  },
+  "aa_false_positive_rate": 0.051,
+  "segments": [
+    {
+      "bucket": "0",
+      "version": "gate_30",
+      "players": 1937,
+      "d1": 0.021166752710376872,
+      "d7": 0.008260196179659268
+    },
+    {
+      "bucket": "0",
+      "version": "gate_40",
+      "players": 2057,
+      "d1": 0.02236266407389402,
+      "d7": 0.006319883325230919
+    },
+    {
+      "bucket": "1-29",
+      "version": "gate_30",
+      "players": 26107,
+      "d1": 0.25479756387175856,
+      "d7": 0.045121997931589226
+    },
+    {
+      "bucket": "1-29",
+      "version": "gate_40",
+      "players": 26819,
+      "d1": 0.251761810656624,
+      "d7": 0.041836011782691376
+    },
+    {
+      "bucket": "30-39",
+      "version": "gate_30",
+      "players": 3090,
+      "d1": 0.6401294498381876,
+      "d7": 0.15728155339805824
+    },
+    {
+      "bucket": "30-39",
+      "version": "gate_40",
+      "players": 2786,
+      "d1": 0.6611629576453697,
+      "d7": 0.1568557071069634
+    },
+    {
+      "bucket": "40-99",
+      "version": "gate_30",
+      "players": 7398,
+      "d1": 0.783860502838605,
+      "d7": 0.32900783995674504
+    },
+    {
+      "bucket": "40-99",
+      "version": "gate_40",
+      "players": 7479,
+      "d1": 0.7724294691803717,
+      "d7": 0.2938895574274636
+    },
+    {
+      "bucket": "100+",
+      "version": "gate_30",
+      "players": 6167,
+      "d1": 0.9022215015404573,
+      "d7": 0.7113669531376682
+    },
+    {
+      "bucket": "100+",
+      "version": "gate_40",
+      "players": 6348,
+      "d1": 0.8982356647763075,
+      "d7": 0.7103024574669187
+    }
+  ],
+  "engagement": [
+    {
+      "bucket": "0",
+      "players": 3994,
+      "d1": 0.021782674011016526,
+      "d7": 0.007260891337005508,
+      "share": 0.04428527076772963
+    },
+    {
+      "bucket": "1-29",
+      "players": 52926,
+      "d1": 0.25325926765672824,
+      "d7": 0.04345690208971016,
+      "share": 0.5868408213953076
+    },
+    {
+      "bucket": "30-39",
+      "players": 5876,
+      "d1": 0.6501021102791015,
+      "d7": 0.1570796460176991,
+      "share": 0.0651527919457134
+    },
+    {
+      "bucket": "40-99",
+      "players": 14877,
+      "d1": 0.7781138670430866,
+      "d7": 0.3113530953821335,
+      "share": 0.16495542644254224
+    },
+    {
+      "bucket": "100+",
+      "players": 12515,
+      "d1": 0.9001997602876548,
+      "d7": 0.7108270075908909,
+      "share": 0.13876568944870715
+    }
+  ],
+  "overall": {
+    "d1": 0.4452144409455803,
+    "d7": 0.1860557945624695,
+    "median_rounds": 16.0,
+    "share_under_30": 0.6311260921630372,
+    "share_zero": 0.04428527076772963,
+    "d1_not_d7": 0.2990530891027631
+  },
+  "impact_per_100k_installs": 818.3181608842959,
+  "decision": "Keep gate at level 30"
+};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const pct = (x,d=2) => (x*100).toFixed(d)+'%';
+const fmt = n => n.toLocaleString('en-US');
+document.getElementById('nplayers').textContent = fmt(R.n);
+let metric = 'retention_7';
+const charts = ['c1','c2','c3','c4'].map(id => echarts.init(document.getElementById(id), null, {renderer:'svg'}));
+function base(){return {textStyle:{fontFamily:'system-ui,sans-serif',color:css('--text2')},
+ grid:{left:44,right:12,top:16,bottom:30},
+ tooltip:{backgroundColor:css('--surface'),borderColor:css('--line'),textStyle:{color:css('--text')}}};}
+function axisY(fmtr){return {type:'value',axisLabel:{formatter:fmtr,color:css('--text2')},splitLine:{lineStyle:{color:css('--grid')}}};}
+function axisX(data){return {type:'category',data,axisLine:{lineStyle:{color:css('--line')}},axisTick:{show:false},axisLabel:{color:css('--text2')}};}
+function render(){
+ const t = R.tests[metric], label = metric==='retention_7'?'Day-7':'Day-1';
+ const ci = (p,n)=>1.96*Math.sqrt(p*(1-p)/n);
+ kc.textContent = pct(t.control); kcn.textContent = fmt(R.n_control)+' players · ±'+pct(ci(t.control,R.n_control));
+ kt.textContent = pct(t.treatment); ktn.textContent = fmt(R.n_treatment)+' players · ±'+pct(ci(t.treatment,R.n_treatment));
+ kl.textContent = (t.rel_lift>0?'+':'')+pct(t.rel_lift,1); kl.style.color = t.p_holm<0.05?css('--bad'):css('--text');
+ kln.textContent = 'p = '+t.p.toFixed(4)+' · Holm p = '+t.p_holm.toFixed(4)+(t.p_holm<0.05?' · significant':' · not significant');
+ kd.textContent = R.decision; kdn.textContent = 'Gate 40 costs ~'+fmt(Math.round(R.impact_per_100k_installs))+' Day-7 players per 100k installs';
+ const b = R.bootstrap[metric];
+ bcap.textContent = '10,000 resamples. 95% interval: '+pct(b.ci[0],1)+' to '+pct(b.ci[1],1)+'. Gate 30 better in '+pct(b.p_gate30_better,1)+' of resamples.';
+ const sc1=css('--s1'), sc2=css('--s2');
+ // c1
+ const cats=['Day-1','Day-7'], ms=['retention_1','retention_7'];
+ const mk=(arm,col,n)=>({name:arm==='control'?'Gate 30':'Gate 40',type:'bar',barWidth:26,barGap:'15%',
+   itemStyle:{color:col,borderRadius:[4,4,0,0]},
+   data:ms.map(m=>({value:R.tests[m][arm],itemStyle:{opacity:m===metric?1:.35}}))});
+ const errs=(arm,n,off)=>({type:'custom',silent:true,z:10,renderItem:(p,api)=>{const v=api.value(1),e=ci(v,n);
+   const top=api.coord([api.value(0),v+e]),bot=api.coord([api.value(0),v-e]);const x=top[0]+off;
+   return {type:'group',children:[{type:'line',shape:{x1:x,y1:top[1],x2:x,y2:bot[1]},style:{stroke:css('--text'),lineWidth:1.5}},
+   {type:'line',shape:{x1:x-4,y1:top[1],x2:x+4,y2:top[1]},style:{stroke:css('--text'),lineWidth:1.5}},
+   {type:'line',shape:{x1:x-4,y1:bot[1],x2:x+4,y2:bot[1]},style:{stroke:css('--text'),lineWidth:1.5}}]};},
+   data:ms.map((m,i)=>[i,R.tests[m][arm]])});
+ charts[0].setOption({...base(),tooltip:{...base().tooltip,trigger:'axis',axisPointer:{type:'shadow'},valueFormatter:v=>pct(v)},
+  xAxis:axisX(cats),yAxis:{...axisY(v=>Math.round(v*100)+'%'),max:.5},
+  series:[mk('control',sc1,R.n_control),mk('treatment',sc2,R.n_treatment),errs('control',R.n_control,-15),errs('treatment',R.n_treatment,15)]},true);
+ // c2 histogram
+ const e=b.hist_edges, mids=b.hist_counts.map((c,i)=>((e[i]+e[i+1])/2));
+ charts[1].setOption({...base(),tooltip:{...base().tooltip,trigger:'axis',formatter:p=>'Lift '+pct(mids[p[0].dataIndex],2)+'<br>'+fmt(p[0].value)+' resamples'},
+  xAxis:{...axisX(mids.map(m=>pct(m,1))),axisLabel:{color:css('--text2'),interval:7}},yAxis:axisY(v=>v),
+  series:[{type:'bar',barCategoryGap:'8%',data:b.hist_counts.map((c,i)=>({value:c,itemStyle:{color:mids[i]<0?sc2:css('--muted'),borderRadius:[3,3,0,0]}})),
+   markLine:{silent:true,symbol:'none',label:{formatter:'no effect',color:css('--text2')},lineStyle:{color:css('--text'),type:'dashed'},
+    data:(()=>{const i=mids.findIndex(m=>m>=0);return i<0?[]:[{xAxis:i}]})()}}]},true);
+ // c3 engagement share
+ charts[2].setOption({...base(),tooltip:{...base().tooltip,trigger:'axis',axisPointer:{type:'shadow'},
+   formatter:p=>{const r=R.engagement[p[0].dataIndex];return r.bucket+' rounds<br>'+fmt(r.players)+' players ('+pct(r.share,1)+')<br>D1 '+pct(r.d1,1)+' · D7 '+pct(r.d7,1)}},
+  xAxis:axisX(R.engagement.map(r=>r.bucket)),yAxis:axisY(v=>Math.round(v*100)+'%'),
+  series:[{type:'bar',barWidth:'55%',data:R.engagement.map(r=>({value:r.share,itemStyle:{color:r.bucket==='1-29'||r.bucket==='0'?css('--text2'):css('--grid2'),borderRadius:[4,4,0,0]}})),
+   label:{show:true,position:'top',color:css('--text2'),formatter:p=>pct(p.value,0)}}]},true);
+ // c4 segments
+ const bk=['1-29','30-39','40-99','100+'], seg=(v)=>bk.map(k=>{const r=R.segments.find(s=>s.bucket===k&&s.version===v);return r?r[metric==='retention_7'?'d7':'d1']:null});
+ charts[3].setOption({...base(),tooltip:{...base().tooltip,trigger:'axis',axisPointer:{type:'shadow'},valueFormatter:v=>pct(v,1)},
+  xAxis:axisX(bk),yAxis:axisY(v=>Math.round(v*100)+'%'),
+  series:[{name:'Gate 30',type:'bar',barGap:'15%',itemStyle:{color:sc1,borderRadius:[4,4,0,0]},data:seg('gate_30')},
+          {name:'Gate 40',type:'bar',itemStyle:{color:sc2,borderRadius:[4,4,0,0]},data:seg('gate_40')}]},true);
+ // table
+ const T=R.tests, g=T.sum_gamerounds, P=R.power;
+ const row=(a,b,c,d,e,f)=>`<tr><td>${a}</td><td class="num">${b}</td><td class="num">${c}</td><td class="num">${d}</td><td class="num">${e}</td><td>${f}</td></tr>`;
+ tbl.innerHTML=`<tr><th>Metric</th><th class="num">Gate 30</th><th class="num">Gate 40</th><th class="num">Diff (95% CI)</th><th class="num">Holm p</th><th>Read</th></tr>`+
+  row('Day-7 retention (primary)',pct(T.retention_7.control),pct(T.retention_7.treatment),`${(T.retention_7.diff*100).toFixed(2)} pp [${(T.retention_7.ci[0]*100).toFixed(2)}, ${(T.retention_7.ci[1]*100).toFixed(2)}]`,T.retention_7.p_holm.toFixed(4),'<span class="warn">Worse with gate 40</span>')+
+  row('Day-1 retention',pct(T.retention_1.control),pct(T.retention_1.treatment),`${(T.retention_1.diff*100).toFixed(2)} pp [${(T.retention_1.ci[0]*100).toFixed(2)}, ${(T.retention_1.ci[1]*100).toFixed(2)}]`,T.retention_1.p_holm.toFixed(4),'No significant change')+
+  row('Rounds played (guardrail)','median '+g.control_median,'median '+g.treatment_median,'mean '+g.control_mean.toFixed(1)+' vs '+g.treatment_mean.toFixed(1),g.p_holm.toFixed(4),'No significant change')+
+  `<tr><th>Check</th><th class="num" colspan="4">Result</th><th>Status</th></tr>`+
+  `<tr><td>Sample ratio (50/50)</td><td class="num" colspan="4">${fmt(R.n_control)} vs ${fmt(R.n_treatment)} · χ² p = ${R.srm.p.toFixed(4)} (alarm below 0.001)</td><td class="pass">Pass</td></tr>`+
+  `<tr><td>A/A test (1,000 splits of control)</td><td class="num" colspan="4">False-positive rate ${pct(R.aa_false_positive_rate,1)} vs 5% expected</td><td class="pass">Pass</td></tr>`+
+  `<tr><td>Power (α 0.05, 80%)</td><td class="num" colspan="4">Minimum detectable effect: D7 ${(P.retention_7.mde_abs*100).toFixed(2)} pp (${pct(P.retention_7.mde_rel,1)} rel) · D1 ${(P.retention_1.mde_abs*100).toFixed(2)} pp</td><td class="pass">Adequate for D7</td></tr>`;
+}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{metric=b.dataset.m;document.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed',x===b));render();});
+render();
+addEventListener('resize',()=>charts.forEach(c=>c.resize()));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+</script></body></html>
